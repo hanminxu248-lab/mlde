@@ -4,14 +4,15 @@ import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, EsmModel, EsmTokenizer
 from typing import List, Union
-from pathlib import Path
-import hydra
-from omegaconf import OmegaConf
-import sys
 import torch.nn.functional as F
 # from .attention.decoder import Decoder
 from de.common.utils import get_mutants
 from de.predictors.attention.decoder import Decoder
+from de.samplers.models.amix_utils import load_amix_model
+
+# Constants
+AMIX_LANDSCAPE_DIR = './landscape_params/amix_landscape'
+ESM1B_LANDSCAPE_DIR = './landscape_params/esm1b_landscape'
 
 
 class ESM1b_Attention1d(nn.Module):
@@ -34,7 +35,7 @@ class ESM1b_Landscape:
     """
 
     def __init__(self, task: str, device: Union[str, torch.device]):
-        task_dir_path = os.path.join('./landscape_params/esm1b_landscape', task)
+        task_dir_path = os.path.join(ESM1B_LANDSCAPE_DIR, task)
         task_dir_path = os.path.abspath(task_dir_path)
         assert os.path.exists(os.path.join(task_dir_path, 'decoder.pt'))
         self.model = ESM1b_Attention1d()
@@ -145,22 +146,8 @@ class AMix_Attention1d(nn.Module):
     def __init__(self, ckpt_path: str):
         super(AMix_Attention1d, self).__init__()
         
-        # Load AMix model
-        root_path = Path(ckpt_path).parents[1]
-        sys.path.append(str(root_path))
-        cfg_path = Path(root_path, ".hydra", "config.yaml")
-        
-        if not cfg_path.exists():
-            raise FileNotFoundError(f"Config file not found at {cfg_path}")
-        
-        ckpt_cfg = OmegaConf.load(cfg_path)
-        ckpt_cfg.model.bfn.net.config._attn_implementation = 'sdpa'
-        
-        self.encoder = hydra.utils.instantiate(ckpt_cfg.model)
-        state_dict = torch.load(ckpt_path, map_location='cpu')['state_dict']
-        self.encoder.load_state_dict(state_dict)
-        del state_dict
-        
+        # Load AMix model using utility function
+        self.encoder = load_amix_model(ckpt_path, device='cpu')
         self.tokenizer = EsmTokenizer.from_pretrained('facebook/esm2_t30_150M_UR50D')
         
         # Get hidden size from the AMix model
@@ -196,7 +183,7 @@ class AMix_Landscape:
     """
 
     def __init__(self, task: str, ckpt_path: str, device: Union[str, torch.device]):
-        task_dir_path = os.path.join('./landscape_params/amix_landscape', task)
+        task_dir_path = os.path.join(AMIX_LANDSCAPE_DIR, task)
         task_dir_path = os.path.abspath(task_dir_path)
         assert os.path.exists(os.path.join(task_dir_path, 'decoder.pt')), \
             f"Decoder not found at {os.path.join(task_dir_path, 'decoder.pt')}"

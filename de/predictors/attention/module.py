@@ -7,11 +7,8 @@ from torchmetrics.regression.mae import MeanAbsoluteError
 from typing import Any, List
 from .decoder import Decoder
 from transformers import EsmModel, AutoTokenizer, EsmTokenizer
-from pathlib import Path
-import hydra
-from omegaconf import OmegaConf
-import sys
 import torch.nn.functional as F
+from de.samplers.models.amix_utils import load_amix_model
 
 
 class ESM2_Attention(nn.Module):
@@ -129,22 +126,8 @@ class AMix_Attention(nn.Module):
                  hidden_dim: int = 512):
         super().__init__()
         
-        # Load AMix model
-        root_path = Path(ckpt_path).parents[1]
-        sys.path.append(str(root_path))
-        cfg_path = Path(root_path, ".hydra", "config.yaml")
-        
-        if not cfg_path.exists():
-            raise FileNotFoundError(f"Config file not found at {cfg_path}")
-        
-        ckpt_cfg = OmegaConf.load(cfg_path)
-        ckpt_cfg.model.bfn.net.config._attn_implementation = 'sdpa'
-        
-        self.amix_model = hydra.utils.instantiate(ckpt_cfg.model)
-        state_dict = torch.load(ckpt_path, map_location='cpu')['state_dict']
-        self.amix_model.load_state_dict(state_dict)
-        del state_dict
-        
+        # Load AMix model using utility function
+        self.amix_model = load_amix_model(ckpt_path, device='cpu')
         self.tokenizer = EsmTokenizer.from_pretrained('facebook/esm2_t30_150M_UR50D')
         
         # Get hidden size from the AMix model's ESM encoder

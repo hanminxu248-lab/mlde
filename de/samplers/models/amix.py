@@ -1,10 +1,15 @@
 import torch
+import torch.nn.functional as F
 from pathlib import Path
-import hydra
-from omegaconf import OmegaConf
-import sys
 from transformers import EsmTokenizer, BatchEncoding
-from typing import List
+from typing import List, NamedTuple
+from .amix_utils import load_amix_model
+
+
+class ModelOutput(NamedTuple):
+    """Output structure for AMix model compatible with ESM2."""
+    logits: torch.Tensor
+    hidden_states: tuple
 
 
 class AMix(torch.nn.Module):
@@ -18,24 +23,8 @@ class AMix(torch.nn.Module):
         super(AMix, self).__init__()
         assert ckpt_path is not None, "ckpt_path must be provided"
         
-        # Load AMix model
-        root_path = Path(ckpt_path).parents[1]
-        sys.path.append(str(root_path))
-        cfg_path = Path(root_path, ".hydra", "config.yaml")
-        
-        if not cfg_path.exists():
-            raise FileNotFoundError(f"Config file not found at {cfg_path}")
-        
-        ckpt_cfg = OmegaConf.load(cfg_path)
-        
-        # Set attention implementation
-        ckpt_cfg.model.bfn.net.config._attn_implementation = 'sdpa'
-        
-        # Instantiate and load model
-        self.model = hydra.utils.instantiate(ckpt_cfg.model)
-        state_dict = torch.load(ckpt_path, map_location='cpu')['state_dict']
-        self.model.load_state_dict(state_dict)
-        del state_dict
+        # Load AMix model using utility function
+        self.model = load_amix_model(ckpt_path, device='cpu')
         
         # Initialize tokenizer (AMix uses same tokenizer as ESM2)
         self.tokenizer = EsmTokenizer.from_pretrained('facebook/esm2_t30_150M_UR50D')
@@ -66,7 +55,7 @@ class AMix(torch.nn.Module):
         """
         return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
 
-    def forward(self, inputs: BatchEncoding) -> torch.Tensor:
+    def forward(self, inputs: BatchEncoding) -> ModelOutput:
         """Forward pass of AMix model
 
         Args:
@@ -80,7 +69,6 @@ class AMix(torch.nn.Module):
         attention_mask = inputs.get("attention_mask", None)
         
         # Create one-hot encoding for BFN input
-        import torch.nn.functional as F
         inputs_embeds = F.one_hot(input_ids, num_classes=len(self.tokenizer)).float()
         
         # Set timestep to 1.0 for inference (fully denoised)
@@ -96,12 +84,8 @@ class AMix(torch.nn.Module):
             )
         
         # Create output structure similar to ESM2
-        class ModelOutput:
-            def __init__(self, logits, hidden_states):
-                self.logits = logits
-                self.hidden_states = hidden_states
-        
         return ModelOutput(
             logits=outputs["logits"],
             hidden_states=(outputs.get("all_hiddens", None),) if "all_hiddens" in outputs else (outputs["last_hidden_state"],)
         )
+

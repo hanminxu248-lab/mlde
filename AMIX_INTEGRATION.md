@@ -99,6 +99,13 @@ AMix expects checkpoints in the following structure:
 
 ## Implementation Details
 
+### Utility Functions
+A shared utility module (`de/samplers/models/amix_utils.py`) provides common functions for loading AMix models:
+- `load_amix_config()`: Load configuration from checkpoint
+- `load_amix_model()`: Load and instantiate AMix model
+
+This reduces code duplication and improves maintainability across all AMix components.
+
 ### Tokenizer
 AMix uses the same tokenizer as ESM2 (`facebook/esm2_t30_150M_UR50D`), which simplifies integration and ensures compatibility.
 
@@ -110,14 +117,19 @@ The AMix model expects:
 
 ### Classes Added
 
-1. **`de/samplers/models/amix.py`**
-   - `AMix`: Main wrapper for mutation model
+1. **`de/samplers/models/amix_utils.py`** (New utility module)
+   - `load_amix_config()`: Shared config loading
+   - `load_amix_model()`: Shared model loading
 
-2. **`de/predictors/attention/module.py`**
+2. **`de/samplers/models/amix.py`**
+   - `AMix`: Main wrapper for mutation model
+   - `ModelOutput`: Named tuple for model outputs
+
+3. **`de/predictors/attention/module.py`**
    - `AMix_Attention`: Fitness predictor with AMix encoder
    - `AMixDecoderModule`: Training module for AMix-based predictor
 
-3. **`de/predictors/oracle.py`**
+4. **`de/predictors/oracle.py`**
    - `AMix_Attention1d`: AMix encoder for oracle
    - `AMix_Landscape`: Fitness landscape simulation with AMix
 
