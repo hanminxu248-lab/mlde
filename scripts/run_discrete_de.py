@@ -8,8 +8,9 @@ from de.common.utils import set_seed, enable_full_deterministic
 from de.directed_evolution import DiscreteDirectedEvolution2
 from de.samplers.maskers import RandomMasker2, ImportanceMasker2
 from de.samplers.models.esm import ESM2
-from de.predictors.attention.module import ESM2DecoderModule, ESM2_Attention
-from de.predictors.oracle import ESM1b_Landscape, ESM1v
+from de.samplers.models.amix import AMix
+from de.predictors.attention.module import ESM2DecoderModule, ESM2_Attention, AMixDecoderModule, AMix_Attention
+from de.predictors.oracle import ESM1b_Landscape, ESM1v, AMix_Landscape
 
 
 def parse_args():
@@ -92,8 +93,35 @@ def parse_args():
     parser.add_argument("--esm1v_seed",
                         type=int,
                         choices=[1, 2, 3, 4, 5])
+    parser.add_argument("--use_amix",
+                        action="store_true",
+                        help="Use AMix model instead of ESM2.")
+    parser.add_argument("--amix_ckpt_path",
+                        type=str,
+                        help="Path to AMix checkpoint file.")
+    parser.add_argument("--amix_oracle_ckpt_path",
+                        type=str,
+                        help="Path to AMix checkpoint for oracle model.")
     args = parser.parse_args()
+    
+    # Validate AMix arguments
+    if args.use_amix and args.amix_ckpt_path is None:
+        parser.error("--amix_ckpt_path is required when --use_amix is set")
+    
     return args
+
+
+def validate_amix_args(args):
+    """Validate AMix-related arguments.
+    
+    Args:
+        args: Parsed command-line arguments
+        
+    Raises:
+        ValueError: If required AMix arguments are missing
+    """
+    if args.use_amix and args.amix_ckpt_path is None:
+        raise ValueError("amix_ckpt_path must be provided when use_amix is True")
 
 
 
@@ -107,7 +135,10 @@ def extract_from_csv(csv_file: str, top_k: int = -1) -> Tuple[List[str], np.ndar
 
 
 def initialize_mutation_model(args, device: torch.device):
-    model = ESM2(pretrained_model_name_or_path=args.pretrained_mutation_name)
+    if args.use_amix:
+        model = AMix(ckpt_path=args.amix_ckpt_path)
+    else:
+        model = ESM2(pretrained_model_name_or_path=args.pretrained_mutation_name)
     tokenizer = model.tokenizer
     model.to(device)
     model.eval()
@@ -124,7 +155,10 @@ def initialize_maskers(args):
 
 
 def initialize_oracle(args, device: Union[str, torch.device]):
-    landscape = ESM1b_Landscape(args.task, device)
+    if args.use_amix and args.amix_oracle_ckpt_path:
+        landscape = AMix_Landscape(args.task, args.amix_oracle_ckpt_path, device)
+    else:
+        landscape = ESM1b_Landscape(args.task, device)
     return landscape
 
 
@@ -134,14 +168,18 @@ def initialize_oracle2(args, device):
 
 
 def initialize_fitness_predictor(args, device: Union[str, torch.device]):
-    tmp_name = "facebook/esm2_t33_650M_UR50D"
-    # decoder = ESM2_Attention(args.pretrained_mutation_name, hidden_dim=args.dec_hidden_size)
-    decoder = ESM2_Attention(tmp_name, hidden_dim=args.dec_hidden_size)
-    model = ESM2DecoderModule.load_from_checkpoint(
-        args.predictor_ckpt_path, map_location=device, net=decoder
-    )
+    if args.use_amix:
+        decoder = AMix_Attention(args.amix_ckpt_path, hidden_dim=args.dec_hidden_size)
+        model = AMixDecoderModule.load_from_checkpoint(
+            args.predictor_ckpt_path, map_location=device, net=decoder
+        )
+    else:
+        tmp_name = "facebook/esm2_t33_650M_UR50D"
+        decoder = ESM2_Attention(tmp_name, hidden_dim=args.dec_hidden_size)
+        model = ESM2DecoderModule.load_from_checkpoint(
+            args.predictor_ckpt_path, map_location=device, net=decoder
+        )
     model.eval()
-
     return model
 
 
@@ -157,6 +195,9 @@ def save_results(wt_seqs: List[str], mutants, score, valid_score, output_path: s
 
 
 def main(args):
+    # Validate AMix arguments
+    validate_amix_args(args)
+    
     # Init env stuffs
     set_seed(args.seed) if args.set_seed_only else enable_full_deterministic(args.seed)
     os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = 'true'

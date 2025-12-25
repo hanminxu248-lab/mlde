@@ -2,11 +2,16 @@ import os
 import json
 import torch
 import torch.nn as nn
-from transformers import AutoTokenizer, EsmModel
+from transformers import AutoTokenizer, EsmModel, EsmTokenizer
 from typing import List, Union
 # from .attention.decoder import Decoder
 from de.common.utils import get_mutants
 from de.predictors.attention.decoder import Decoder
+from de.samplers.models.amix_utils import load_amix_model, prepare_amix_inputs
+
+# Constants
+AMIX_LANDSCAPE_DIR = './landscape_params/amix_landscape'
+ESM1B_LANDSCAPE_DIR = './landscape_params/esm1b_landscape'
 
 
 class ESM1b_Attention1d(nn.Module):
@@ -29,7 +34,7 @@ class ESM1b_Landscape:
     """
 
     def __init__(self, task: str, device: Union[str, torch.device]):
-        task_dir_path = os.path.join('./landscape_params/esm1b_landscape', task)
+        task_dir_path = os.path.join(ESM1B_LANDSCAPE_DIR, task)
         task_dir_path = os.path.abspath(task_dir_path)
         assert os.path.exists(os.path.join(task_dir_path, 'decoder.pt'))
         self.model = ESM1b_Attention1d()
@@ -133,6 +138,77 @@ class ESM1v:
         else:
             raise ValueError("method is not supported")
         return scores
+
+
+class AMix_Attention1d(nn.Module):
+
+    def __init__(self, ckpt_path: str):
+        super(AMix_Attention1d, self).__init__()
+        
+        # Load AMix model using utility function
+        self.encoder = load_amix_model(ckpt_path, device='cpu')
+        self.tokenizer = EsmTokenizer.from_pretrained('facebook/esm2_t30_150M_UR50D')
+        
+        # Get hidden size from the AMix model
+        hidden_size = self.encoder.bfn.net.esm.config.hidden_size
+        self.decoder = Decoder(input_dim=hidden_size, hidden_dim=512)
+
+    def forward(self, inputs):
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs.get("attention_mask", None)
+        
+        # Prepare inputs using shared utility
+        inputs_embeds, t, attention_mask = prepare_amix_inputs(
+            input_ids, self.tokenizer, attention_mask
+        )
+        
+        # Get encoder output
+        with torch.no_grad():
+            outputs = self.encoder.bfn.net(
+                t=t,
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                output_hidden_states=False
+            )
+        
+        x = outputs["last_hidden_state"]
+        x = self.decoder(x)
+        return x
+
+
+class AMix_Landscape:
+    """
+        An AMix-based oracle model to simulate protein fitness landscape.
+    """
+
+    def __init__(self, task: str, ckpt_path: str, device: Union[str, torch.device]):
+        task_dir_path = os.path.join(AMIX_LANDSCAPE_DIR, task)
+        task_dir_path = os.path.abspath(task_dir_path)
+        decoder_path = os.path.join(task_dir_path, 'decoder.pt')
+        assert os.path.exists(decoder_path), \
+            f"Decoder not found at {decoder_path}"
+        
+        self.model = AMix_Attention1d(ckpt_path)
+        self.model.decoder.load_state_dict(torch.load(decoder_path))
+        with open(os.path.join(task_dir_path, 'starting_sequence.json')) as f:
+            self.starting_sequence = json.load(f)
+
+        self.tokenizer = self.model.tokenizer
+        self.device = device
+        self.model.to(self.device)
+
+    def infer_fitness(self, sequences: List[str], batch_size: int = 16, device=None):
+        # Input:  - sequences:      [query_batch_size, sequence_length]
+        # Output: - fitness_scores: [query_batch_size]
+
+        self.model.eval()
+        fitness_scores = []
+        seqs = [sequences[i:i + batch_size] for i in range(0, len(sequences), batch_size)]
+        for seq in seqs:
+            inputs = self.tokenizer(seq, return_tensors="pt", padding=True).to(self.device)
+            fitness = self.model(inputs).cpu().tolist()
+            fitness_scores.extend(fitness)
+        return fitness_scores
 
 
 if __name__ == "__main__":
