@@ -4,11 +4,10 @@ import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, EsmModel, EsmTokenizer
 from typing import List, Union
-import torch.nn.functional as F
 # from .attention.decoder import Decoder
 from de.common.utils import get_mutants
 from de.predictors.attention.decoder import Decoder
-from de.samplers.models.amix_utils import load_amix_model
+from de.samplers.models.amix_utils import load_amix_model, prepare_amix_inputs
 
 # Constants
 AMIX_LANDSCAPE_DIR = './landscape_params/amix_landscape'
@@ -155,13 +154,13 @@ class AMix_Attention1d(nn.Module):
         self.decoder = Decoder(input_dim=hidden_size, hidden_dim=512)
 
     def forward(self, inputs):
-        # Convert input_ids to one-hot embeddings for BFN
         input_ids = inputs["input_ids"]
-        inputs_embeds = F.one_hot(input_ids, num_classes=len(self.tokenizer)).float()
-        attention_mask = inputs.get("attention_mask", (input_ids != self.tokenizer.pad_token_id))
+        attention_mask = inputs.get("attention_mask", None)
         
-        # Set timestep to 1.0 for inference
-        t = torch.ones_like(attention_mask).float()
+        # Prepare inputs using shared utility
+        inputs_embeds, t, attention_mask = prepare_amix_inputs(
+            input_ids, self.tokenizer, attention_mask
+        )
         
         # Get encoder output
         with torch.no_grad():

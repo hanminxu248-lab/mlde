@@ -4,6 +4,7 @@ from pathlib import Path
 from omegaconf import OmegaConf
 import hydra
 import torch
+import torch.nn.functional as F
 import os
 
 
@@ -68,3 +69,31 @@ def load_amix_model(ckpt_path: str, device='cpu'):
     del state_dict
     
     return model
+
+
+def prepare_amix_inputs(input_ids: torch.Tensor, tokenizer, attention_mask=None):
+    """Prepare inputs for AMix model by converting to one-hot embeddings.
+    
+    Args:
+        input_ids (torch.Tensor): Token IDs of shape [batch, seq_len]
+        tokenizer: Tokenizer with vocabulary
+        attention_mask (torch.Tensor, optional): Attention mask
+        
+    Returns:
+        tuple: (inputs_embeds, timestep, attention_mask) ready for AMix forward pass
+        
+    Note:
+        This creates one-hot embeddings which are memory-intensive for large
+        vocabularies. The AMix BFN architecture requires this format for
+        discrete diffusion modeling.
+    """
+    # Create one-hot encoding for BFN input
+    # Note: This is required by AMix's Bayesian Flow Network architecture
+    inputs_embeds = F.one_hot(input_ids, num_classes=len(tokenizer)).float()
+    
+    # Set timestep to 1.0 for inference (fully denoised)
+    if attention_mask is None:
+        attention_mask = (input_ids != tokenizer.pad_token_id)
+    t = torch.ones_like(attention_mask).float()
+    
+    return inputs_embeds, t, attention_mask

@@ -89,6 +89,11 @@ def parse_args():
                         type=str,
                         help="Path to AMix checkpoint file (required when encoder_type is amix).")
     args = parser.parse_args()
+    
+    # Validate encoder arguments
+    if args.encoder_type == "amix" and args.amix_ckpt_path is None:
+        parser.error("--amix_ckpt_path is required when --encoder_type is amix")
+    
     return args
 
 

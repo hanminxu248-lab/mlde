@@ -195,6 +195,9 @@ def save_results(wt_seqs: List[str], mutants, score, valid_score, output_path: s
 
 
 def main(args):
+    # Validate AMix arguments
+    validate_amix_args(args)
+    
     # Init env stuffs
     set_seed(args.seed) if args.set_seed_only else enable_full_deterministic(args.seed)
     os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = 'true'

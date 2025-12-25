@@ -1,9 +1,7 @@
 import torch
-import torch.nn.functional as F
-from pathlib import Path
 from transformers import EsmTokenizer, BatchEncoding
 from typing import List, NamedTuple
-from .amix_utils import load_amix_model
+from .amix_utils import load_amix_model, prepare_amix_inputs
 
 
 class ModelOutput(NamedTuple):
@@ -68,15 +66,13 @@ class AMix(torch.nn.Module):
         Returns:
             results: Model outputs with logits and hidden states.
         """
-        # AMix expects inputs_embeds, so we need to convert input_ids to embeddings
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask", None)
         
-        # Create one-hot encoding for BFN input
-        inputs_embeds = F.one_hot(input_ids, num_classes=len(self.tokenizer)).float()
-        
-        # Set timestep to 1.0 for inference (fully denoised)
-        t = torch.ones_like(attention_mask).float()
+        # Prepare inputs for AMix using shared utility
+        inputs_embeds, t, attention_mask = prepare_amix_inputs(
+            input_ids, self.tokenizer, attention_mask
+        )
         
         # Forward pass through the BFN model
         with torch.no_grad():

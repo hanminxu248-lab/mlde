@@ -7,8 +7,7 @@ from torchmetrics.regression.mae import MeanAbsoluteError
 from typing import Any, List
 from .decoder import Decoder
 from transformers import EsmModel, AutoTokenizer, EsmTokenizer
-import torch.nn.functional as F
-from de.samplers.models.amix_utils import load_amix_model
+from de.samplers.models.amix_utils import load_amix_model, prepare_amix_inputs
 
 
 class ESM2_Attention(nn.Module):
@@ -139,12 +138,10 @@ class AMix_Attention(nn.Module):
             param.requires_grad = False
 
     def forward(self, x):
-        # Convert input_ids to one-hot embeddings for BFN
-        inputs_embeds = F.one_hot(x, num_classes=len(self.tokenizer)).float()
-        attention_mask = (x != self.tokenizer.pad_token_id)
-        
-        # Set timestep to 1.0 for inference
-        t = torch.ones_like(attention_mask).float()
+        # Prepare inputs using shared utility
+        inputs_embeds, t, attention_mask = prepare_amix_inputs(
+            x, self.tokenizer
+        )
         
         # Get encoder output
         with torch.no_grad():
@@ -246,12 +243,15 @@ class AMixDecoderModule(LightningModule):
             inputs = self.net.tokenizer(seqs, return_tensors="pt", padding=True).to(self.device)
             input_ids = inputs["input_ids"]
             
-            # Convert to one-hot embeddings
-            inputs_embeds = F.one_hot(input_ids, num_classes=len(self.net.tokenizer)).float()
-            attention_mask = (input_ids != self.net.tokenizer.pad_token_id)
+            # Prepare inputs using shared utility
+            inputs_embeds, t, attention_mask = prepare_amix_inputs(
+                input_ids, self.net.tokenizer
+            )
             
-            # Set timestep to 1.0 for inference
-            t = torch.ones_like(attention_mask).float()
+            # Move to device
+            inputs_embeds = inputs_embeds.to(self.device)
+            t = t.to(self.device)
+            attention_mask = attention_mask.to(self.device)
             
             # Get encoder output
             outputs = self.net.amix_model.bfn.net(
