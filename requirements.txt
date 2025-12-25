@@ -9,3 +9,5 @@ wandb
 matplotlib
 seaborn
 tqdm
+hydra-core
+omegaconf

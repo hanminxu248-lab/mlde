@@ -6,7 +6,7 @@ from lightning import Trainer, seed_everything
 from lightning.pytorch import loggers, callbacks
 from torch.optim import Adam
 from de.dataio.proteins import ProteinsDataModule
-from de.predictors.attention.module import ESM2_Attention, ESM2DecoderModule
+from de.predictors.attention.module import ESM2_Attention, ESM2DecoderModule, AMix_Attention, AMixDecoderModule
 
 
 def parse_args():
@@ -80,12 +80,24 @@ def parse_args():
                         choices=["highest", "high", "medium"],
                         default="highest",
                         help="Internal precision of float32 matrix multiplications.")
+    parser.add_argument("--encoder_type",
+                        type=str,
+                        choices=["esm2", "amix"],
+                        default="esm2",
+                        help="Encoder type to use (esm2 or amix).")
+    parser.add_argument("--amix_ckpt_path",
+                        type=str,
+                        help="Path to AMix checkpoint file (required when encoder_type is amix).")
     args = parser.parse_args()
     return args
 
 
-def init_model(pretrained_encoder, hidden_dim):
-    model = ESM2_Attention(pretrained_encoder, hidden_dim)
+def init_model(encoder_type, pretrained_encoder_or_ckpt, hidden_dim):
+    if encoder_type == "amix":
+        assert pretrained_encoder_or_ckpt is not None, "amix_ckpt_path must be provided when encoder_type is amix"
+        model = AMix_Attention(pretrained_encoder_or_ckpt, hidden_dim)
+    else:
+        model = ESM2_Attention(pretrained_encoder_or_ckpt, hidden_dim)
     tokenizer = model.tokenizer
     model.freeze_encoder()
     return model, tokenizer
@@ -97,7 +109,8 @@ def train(args):
     accelerator = "cpu" if args.devices == "-1" else "gpu"
 
     # Load model
-    model, tokenizer = init_model(args.pretrained_encoder, args.dec_hidden_dim)
+    encoder_path = args.amix_ckpt_path if args.encoder_type == "amix" else args.pretrained_encoder
+    model, tokenizer = init_model(args.encoder_type, encoder_path, args.dec_hidden_dim)
     # Init optimizer
     optim = partial(Adam, lr=args.lr)
 
@@ -116,7 +129,10 @@ def train(args):
     # ==================== #
     #  ====== Model ====== #
     # ==================== #
-    module = ESM2DecoderModule(model, optim)
+    if args.encoder_type == "amix":
+        module = AMixDecoderModule(model, optim)
+    else:
+        module = ESM2DecoderModule(model, optim)
 
     # ====================== #
     # ====== Training ====== #
@@ -126,7 +142,10 @@ def train(args):
         loggers.WandbLogger(save_dir=args.output_dir,
                             project=args.wandb_project)
     ]
-    prefix = args.pretrained_encoder.split("/")[-1] + f"-dec_{args.dec_hidden_dim}"
+    if args.encoder_type == "amix":
+        prefix = f"amix-dec_{args.dec_hidden_dim}"
+    else:
+        prefix = args.pretrained_encoder.split("/")[-1] + f"-dec_{args.dec_hidden_dim}"
     callback_list = [
         callbacks.RichModelSummary(),
         callbacks.RichProgressBar(),
