@@ -1,0 +1,8 @@
+optimizer: !!python/object/apply:functools.partial
+  args:
+  - &id001 !!python/name:torch.optim.adam.Adam ''
+  state: !!python/tuple
+  - *id001
+  - !!python/tuple []
+  - lr: 5.0e-05
+  - null
