@@ -4,6 +4,7 @@ from pathlib import Path
 from omegaconf import OmegaConf
 import hydra
 import torch
+import os
 
 
 def load_amix_config(ckpt_path: str):
@@ -14,9 +15,26 @@ def load_amix_config(ckpt_path: str):
         
     Returns:
         tuple: (cfg, root_path) - Configuration object and root path
+        
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        ValueError: If checkpoint path is invalid
     """
+    ckpt_path = os.path.abspath(ckpt_path)
+    if not os.path.exists(ckpt_path):
+        raise FileNotFoundError(f"Checkpoint file not found at {ckpt_path}")
+    
     root_path = Path(ckpt_path).parents[1]
-    sys.path.append(str(root_path))
+    
+    # Validate that root_path is a reasonable location before adding to sys.path
+    if not root_path.exists() or not root_path.is_dir():
+        raise ValueError(f"Invalid checkpoint directory structure: {root_path}")
+    
+    # Only add to sys.path if not already present
+    root_path_str = str(root_path)
+    if root_path_str not in sys.path:
+        sys.path.append(root_path_str)
+    
     cfg_path = Path(root_path, ".hydra", "config.yaml")
     
     if not cfg_path.exists():
@@ -37,6 +55,10 @@ def load_amix_model(ckpt_path: str, device='cpu'):
         
     Returns:
         model: Loaded AMix model
+        
+    Raises:
+        FileNotFoundError: If checkpoint or config file doesn't exist
+        ValueError: If checkpoint path is invalid
     """
     ckpt_cfg, _ = load_amix_config(ckpt_path)
     

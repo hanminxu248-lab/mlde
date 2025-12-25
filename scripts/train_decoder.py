@@ -94,7 +94,7 @@ def parse_args():
 
 def init_model(encoder_type, pretrained_encoder_or_ckpt, hidden_dim):
     if encoder_type == "amix":
-        assert pretrained_encoder_or_ckpt is not None, "amix_ckpt_path must be provided when encoder_type is amix"
+        assert pretrained_encoder_or_ckpt is not None, "Encoder path must be provided when encoder_type is amix"
         model = AMix_Attention(pretrained_encoder_or_ckpt, hidden_dim)
     else:
         model = ESM2_Attention(pretrained_encoder_or_ckpt, hidden_dim)

@@ -185,13 +185,12 @@ class AMix_Landscape:
     def __init__(self, task: str, ckpt_path: str, device: Union[str, torch.device]):
         task_dir_path = os.path.join(AMIX_LANDSCAPE_DIR, task)
         task_dir_path = os.path.abspath(task_dir_path)
-        assert os.path.exists(os.path.join(task_dir_path, 'decoder.pt')), \
-            f"Decoder not found at {os.path.join(task_dir_path, 'decoder.pt')}"
+        decoder_path = os.path.join(task_dir_path, 'decoder.pt')
+        assert os.path.exists(decoder_path), \
+            f"Decoder not found at {decoder_path}"
         
         self.model = AMix_Attention1d(ckpt_path)
-        self.model.decoder.load_state_dict(
-            torch.load(os.path.join(task_dir_path, 'decoder.pt'))
-        )
+        self.model.decoder.load_state_dict(torch.load(decoder_path))
         with open(os.path.join(task_dir_path, 'starting_sequence.json')) as f:
             self.starting_sequence = json.load(f)
 

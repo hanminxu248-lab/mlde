@@ -103,7 +103,25 @@ def parse_args():
                         type=str,
                         help="Path to AMix checkpoint for oracle model.")
     args = parser.parse_args()
+    
+    # Validate AMix arguments
+    if args.use_amix and args.amix_ckpt_path is None:
+        parser.error("--amix_ckpt_path is required when --use_amix is set")
+    
     return args
+
+
+def validate_amix_args(args):
+    """Validate AMix-related arguments.
+    
+    Args:
+        args: Parsed command-line arguments
+        
+    Raises:
+        ValueError: If required AMix arguments are missing
+    """
+    if args.use_amix and args.amix_ckpt_path is None:
+        raise ValueError("amix_ckpt_path must be provided when use_amix is True")
 
 
 
@@ -118,7 +136,6 @@ def extract_from_csv(csv_file: str, top_k: int = -1) -> Tuple[List[str], np.ndar
 
 def initialize_mutation_model(args, device: torch.device):
     if args.use_amix:
-        assert args.amix_ckpt_path is not None, "amix_ckpt_path must be provided when use_amix is True"
         model = AMix(ckpt_path=args.amix_ckpt_path)
     else:
         model = ESM2(pretrained_model_name_or_path=args.pretrained_mutation_name)
@@ -152,7 +169,6 @@ def initialize_oracle2(args, device):
 
 def initialize_fitness_predictor(args, device: Union[str, torch.device]):
     if args.use_amix:
-        assert args.amix_ckpt_path is not None, "amix_ckpt_path must be provided when use_amix is True"
         decoder = AMix_Attention(args.amix_ckpt_path, hidden_dim=args.dec_hidden_size)
         model = AMixDecoderModule.load_from_checkpoint(
             args.predictor_ckpt_path, map_location=device, net=decoder

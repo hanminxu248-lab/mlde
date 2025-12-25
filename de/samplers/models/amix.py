@@ -19,9 +19,13 @@ class AMix(torch.nn.Module):
         
         Args:
             ckpt_path (str): Path to AMix checkpoint file.
+            
+        Raises:
+            AssertionError: If ckpt_path is None
+            FileNotFoundError: If checkpoint or config file doesn't exist
         """
         super(AMix, self).__init__()
-        assert ckpt_path is not None, "ckpt_path must be provided"
+        assert ckpt_path is not None, "AMix checkpoint path (ckpt_path) must be provided"
         
         # Load AMix model using utility function
         self.model = load_amix_model(ckpt_path, device='cpu')
